@@ -1,10 +1,17 @@
 
 ---
 
+# Правила инженерии (для всех шагов)
+
+- Любое изменение **схемы БД** — **только** через миграции **Alembic** (модели и миграции идут вместе).
+- Новые модули в **`services/`** и **`repositories/`** сопровождаются **тестами** по смыслу **§8** файла **specification** (быстрые, детерминированные; OpenAI/Telegram — моки).
+
+---
+
 # 🧩 STEP 1 — Add Telegram Bot (aiogram)
 
 ```text id="step1_fastapi_bot"
-Add a Telegram bot to the existing FastAPI project.
+Add a Telegram bot to this project.
 
 Requirements:
 - Use Python
@@ -54,6 +61,8 @@ Add PostgreSQL integration using SQLAlchemy.
 
 Requirements:
 - Configure DB connection in FastAPI project
+- Use Alembic for migrations: any new/changed table must have an Alembic revision (no manual DDL as the workflow)
+
 - Create User model:
   - id (UUID, primary key)
   - telegram_id (string, unique)
@@ -94,102 +103,117 @@ Keep state handling simple (FSM optional).
 
 ---
 
-# 🧩 STEP 5 — Rooms List (Static Config)
+# 🧩 STEP 5 — Room model and rooms list (PostgreSQL)
 
 ```text id="step5_rooms"
-Add rooms feature.
+Add rooms backed by the database (not a static Python config as source of truth).
 
 Requirements:
-- Create a rooms config file (e.g., app/config/rooms.py)
+- Create SQLAlchemy model Room:
+  - id (primary key, stable)
+  - name
+  - topic
+  - invite_link (string)
 
-Rooms:
-- Travel
-- Dating
-- Business
+- Add Alembic migration creating the `room` table
 
-Each room should have:
-- id
-- name
+- Seed initial rooms via the same migration or a follow-up migration (choose one approach):
+  - Travel
+  - Dating
+  - Business
+  (each with topic/name and a placeholder or real invite_link)
+
+- Add room repository (e.g., repositories/room_repo.py) to list rooms and fetch by id
 
 Behavior:
 - On "Find a Room":
-  - Show inline keyboard with rooms
+  - Load rooms from DB
+  - Show inline keyboard with room names
 
-- On click:
-  - Reply: "Joining room: <name>"
+- On room click:
+  - Reply: "Joining room: <name>" (then step 6 sends the link)
+
+Tests: cover room_repo with a test DB or mocks per specification §8.
 ```
 
 ---
 
-# 🧩 STEP 6 — Invite Links
+# 🧩 STEP 6 — Invite links from DB
 
 ```text id="step6_invites"
-Add Telegram invite links to rooms.
+Wire invite links from the Room table.
 
 Requirements:
-- Extend rooms config:
-  - add invite_link per room
-
-Behavior:
-- When user selects room:
+- When user selects a room (from step 5 callback):
   - Send message:
     "Click below to join the room"
-  - Include invite link
+  - Include invite_link from the Room row
 
-Do not implement limits yet.
+- Do not implement limits yet.
+
+No duplicate source of truth: invite_link lives only in PostgreSQL (Room).
 ```
 
 ---
 
-# 🧩 STEP 7 — Post-Session Flow
+# 🧩 STEP 7 — Post-session prompt (after invite)
 
 ```text id="step7_post_session"
-Add post-session interaction.
+Post-session UX after the invite is sent.
 
 Requirements:
-- After sending invite link:
-  - Send button: "I finished talking"
+- After sending the invite link message:
+  - Tell the user they can send a **voice message to this bot** when they are ready, for analysis after their session in the group.
 
-- On click:
-  - Reply:
-    "Send your voice message for analysis 🎤"
+- Do **not** require a separate "I finished talking" button **before** the voice (the confirmation step comes **after** the voice — see step 8).
 
-Keep it stateless.
+Keep copy short and clear.
 ```
 
 ---
 
-# 🧩 STEP 8 — Handle Voice Messages
+# 🧩 STEP 8 — Voice message + "Did you finish?" gate
 
 ```text id="step8_voice"
-Add voice message handling.
+Handle incoming voice before any Whisper/download of the full pipeline.
 
 Requirements:
-- Detect voice messages
-- Extract file_id
-- Log file_id
+- On voice message:
+  - Extract file_id (and chat/user identifiers)
+  - Store **pending** voice for this user (in-memory dict for MVP is OK, or a small DB field — pick one and document)
+  - Do **not** call Whisper or download the file yet
 
-Reply:
-"Voice received. Processing..."
+- Reply with inline keyboard:
+  - "Yes, I finished" / "Not yet" (or equivalent)
 
-Do not process audio yet.
+- User **must** tap an answer to proceed
+
+Behavior:
+- If "Not yet": clear pending voice (or keep policy documented), send a short message (e.g. send a new voice when ready)
+- If "Yes": continue to step 9 (download)
+
+Reply after receiving voice (before Yes) should **not** say "Processing..." for the full AI pipeline — only acknowledge receipt and ask the question.
+
+Do not process audio until the user confirms Yes.
 ```
 
 ---
 
-# 🧩 STEP 9 — Download Voice File
+# 🧩 STEP 9 — Download voice file (after Yes)
 
 ```text id="step9_download"
-Implement voice file download.
+Run only after the user confirmed "Yes" in step 8.
 
 Requirements:
-- Use Telegram API to get file path
-- Download file locally (e.g., /uploads)
+- Use Telegram API to get file path for the **pending** file_id
+- Download file locally (e.g., under /uploads)
 - Generate unique filename
 
-Log saved file path
+- Log saved file path
 
-Handle errors properly.
+- Handle errors properly (missing file, expired file_id, etc.)
+
+Clear pending state after successful download or on fatal error.
 ```
 
 ---
@@ -200,8 +224,8 @@ Handle errors properly.
 Integrate speech-to-text.
 
 Requirements:
-- Use OpenAI Whisper API
-- Send audio file
+- Use OpenAI Whisper API (OPENAI_API_KEY from environment)
+- Send audio file from step 9
 - Receive transcript
 
 After processing:
@@ -209,7 +233,7 @@ After processing:
 - Reply:
   "Transcript: <text>"
 
-Keep API logic in separate service module.
+Keep API logic in **services/speech_to_text.py** (or project naming per architecture block).
 ```
 
 ---
@@ -231,6 +255,8 @@ Prompt should return:
 Reply with structured result.
 
 Keep prompt in a separate file.
+
+Use **services/openai_analysis.py** for GPT calls.
 ```
 
 ---
@@ -268,7 +294,7 @@ Do not change business logic.
 Persist analysis results.
 
 Requirements:
-- Create Analysis table:
+- Create Analysis table (Alembic migration):
   - id
   - user_id (FK)
   - transcript
@@ -279,6 +305,8 @@ Requirements:
 - Save result after processing
 
 Ensure DB integrity.
+
+Add repository tests per specification §8 where appropriate.
 ```
 
 ---
@@ -316,7 +344,7 @@ app/
  │    │     ├── menu.py
  │    │     ├── rooms.py
  │    │     ├── voice.py
- │    │     └── analysis.py
+ │    │     └── profile.py
  │
  ├── core/
  │    ├── config.py
@@ -324,19 +352,21 @@ app/
  │
  ├── models/
  │    ├── user.py
+ │    ├── room.py
  │    └── analysis.py
  │
  ├── repositories/
  │    ├── user_repo.py
+ │    ├── room_repo.py
  │    └── analysis_repo.py
  │
  ├── services/
- │    ├── openai_service.py
- │    ├── speech_service.py
- │    └── analysis_service.py
+ │    ├── speech_to_text.py
+ │    ├── openai_analysis.py
+ │    └── voice_processing.py
  │
- ├── config/
- │    └── rooms.py
+ ├── alembic/
+ │    └── versions/
  │
  └── uploads/
 ```
@@ -362,9 +392,9 @@ Telegram → aiogram → handlers → services → DB → response
 
 ### Services
 
-* Whisper
-* GPT
-* бизнес логика анализа
+* **speech_to_text.py** — Whisper
+* **openai_analysis.py** — GPT
+* **voice_processing.py** — оркестрация скачивания/подготовки аудио при необходимости
 
 ---
 
@@ -384,9 +414,13 @@ Telegram → aiogram → handlers → services → DB → response
 
 → можно вообще без него на MVP
 
-## 3. НЕ делай идеальную схему БД
+## 3. Схема БД — через Alembic
 
-→ достаточно минимальной
+→ любые изменения таблиц только миграциями
+
+## 4. Тесты для services/repositories
+
+→ по §8 specification
 
 ---
 
@@ -394,7 +428,6 @@ Telegram → aiogram → handlers → services → DB → response
 
 Если всё сломается — тебе нужно чтобы работало:
 
-👉 `/start → room → voice → feedback`
+👉 `/start → room → voice → confirm finished → feedback`
 
 Остальное вторично.
-

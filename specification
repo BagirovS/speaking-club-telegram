@@ -1,5 +1,4 @@
 
-
 # 📄 MVP SPECIFICATION (UPDATED)
 
 ## AI Speaking Club (Telegram MVP)
@@ -25,6 +24,15 @@
 
 ---
 
+## 🔐 Environment variables (MVP)
+
+* **`BOT_TOKEN`** — Telegram Bot API token (required).
+* **`OPENAI_API_KEY`** — OpenAI API key for Whisper and GPT (required).
+
+Optional (defaults may be hardcoded): model names for GPT / Whisper if you want deploy-time overrides.
+
+---
+
 ## 🤖 Telegram Layer
 
 * **aiogram v3** (Telegram Bot Framework)
@@ -37,6 +45,8 @@
 * **PostgreSQL** (primary database)
 * **SQLAlchemy 2.0 (async ORM)**
 * **Alembic** (migrations)
+
+**Rule:** any schema change is applied **only** through Alembic migrations (no manual ad-hoc DDL in production).
 
 ---
 
@@ -100,6 +110,8 @@
 * **httpx** — ASGI client for FastAPI route tests (`TestClient`)
 * External APIs (**OpenAI**, **Telegram**) — mock or stub in unit tests; no real network calls in default test suite
 
+**Definition of done (new code):** new modules under **`services/`** and **`repositories/`** ship with tests aligned with **§8** (fast, deterministic; external APIs mocked).
+
 ---
 
 # 3. System Architecture (UPDATED)
@@ -146,13 +158,13 @@ project_root/
  │    │    └── analysis.py
  │    ├── repositories/          # DB access layer
  │    │    ├── user_repo.py
+ │    │    ├── room_repo.py
  │    │    └── analysis_repo.py
  │    ├── services/              # business logic
  │    │    ├── speech_to_text.py
  │    │    ├── openai_analysis.py
  │    │    └── voice_processing.py
- │    ├── config/
- │    │    └── rooms.py
+ │    ├── alembic/               # versions/ — migrations + optional seed data
  │    └── uploads/
  │
  └── tests/                      # mirrors app/ layout where useful
@@ -179,25 +191,36 @@ User opens Telegram bot → `/start`
 
 ## 3. Rooms
 
-* user selects a themed room
-* receives Telegram invite link
+* user selects a themed **room from the database** (see Data Model: Room)
+* receives Telegram **invite_link** stored for that room
 
 ## 4. Conversation
 
-* user joins Telegram voice chat (group-based)
+* user joins Telegram voice chat (group-based) — **outside** the bot
 
-## 5. Post-session
+## 5. Post-session (MVP)
 
-* user clicks “Finished talking”
-* sends voice message
+1. User returns to the bot and sends a **voice message** (their recording for analysis).
+2. The bot **does not** start Whisper/GPT immediately. It asks whether the user has **finished** their speaking session (e.g. inline **Yes / No**).
+3. User **must answer**:
+   * **Yes** → AI pipeline runs on the voice they sent (download → Whisper → GPT → persist → feedback).
+   * **No** → do not run analysis; clear the pending voice (or ask them to send a new voice when ready — implementation detail).
 
-## 6. AI Pipeline
+UX copy may clarify that the user should finish talking in the group and return to the bot; the bot does **not** detect “left the group” or “left voice chat” as a system event for MVP.
+
+## 6. AI Pipeline (after confirmation “Yes”)
 
 1. voice → file download
 2. Whisper → transcript
 3. GPT → analysis
 4. store result
 5. send feedback
+
+### Clarification: when analysis runs
+
+* The product does **not** rely on Telegram signaling “user exited the group” or “user stopped voice chat” as triggers.
+* Analysis starts only after: **voice message to the bot** + **explicit confirmation** that the speaking session is finished (**Yes**).
+* This matches the intended real-world order: user finishes in the room, comes back to the bot, sends audio, then confirms they are done.
 
 ---
 
@@ -212,12 +235,14 @@ User opens Telegram bot → `/start`
 
 ---
 
-## Room
+## Room (persisted in PostgreSQL)
 
-* id
+* id (UUID or integer, stable)
 * name
 * topic
 * invite_link
+
+**MVP:** initial rooms (e.g. Travel, Dating, Business) are inserted via **Alembic migration** (seed data) or one-time seed step — not a standalone Python config file as the source of truth.
 
 ---
 
@@ -260,15 +285,23 @@ User opens Telegram bot → `/start`
 
 ---
 
+## ❗ Schema and tests
+
+* **Alembic** is the only supported way to evolve the database schema.
+* New **`services/`** and **`repositories/`** code follows **§8** testing expectations.
+
+---
+
 # 7. MVP Success Definition
 
 MVP is successful if user can:
 
 1. Join bot
-2. Enter room
+2. Enter room (via DB-backed invite link)
 3. Talk in group
-4. Send voice message
-5. Receive AI feedback
+4. Send voice message to the bot
+5. Confirm they finished
+6. Receive AI feedback
 
 👉 If this loop works end-to-end — MVP is valid
 
@@ -301,4 +334,17 @@ MVP is successful if user can:
 
 ## Coverage
 
-* No hard percentage gate for MVP; prioritize **critical paths** (voice → analysis → persist → response shape). Raise thresholds after MVP when the codebase stabilizes.
+* No hard percentage gate for MVP; prioritize **critical paths** (voice → confirm → analysis → persist → response shape). Raise thresholds after MVP when the codebase stabilizes.
+
+---
+
+# 9. Fixed MVP product decisions (summary)
+
+| Topic | Decision |
+|-------|----------|
+| Rooms | **PostgreSQL** table `Room`; invite links from DB; seed via migration |
+| Env | **`BOT_TOKEN`**, **`OPENAI_API_KEY`** |
+| Services filenames | **`speech_to_text.py`**, **`openai_analysis.py`**, **`voice_processing.py`** |
+| Post-session | **Voice first** → bot asks **finished?** → user answers → **Yes** runs pipeline |
+| Schema | **Alembic only** |
+| New services/repos | Tests per **§8** |
