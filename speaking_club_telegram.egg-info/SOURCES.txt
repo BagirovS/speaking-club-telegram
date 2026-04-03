@@ -1,0 +1,12 @@
+pyproject.toml
+app/__init__.py
+app/config.py
+app/main.py
+app/bot/__init__.py
+app/bot/handlers.py
+app/bot/setup.py
+speaking_club_telegram.egg-info/PKG-INFO
+speaking_club_telegram.egg-info/SOURCES.txt
+speaking_club_telegram.egg-info/dependency_links.txt
+speaking_club_telegram.egg-info/requires.txt
+speaking_club_telegram.egg-info/top_level.txt
