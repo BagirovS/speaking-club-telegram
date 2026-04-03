@@ -1,0 +1,304 @@
+
+
+# 📄 MVP SPECIFICATION (UPDATED)
+
+## AI Speaking Club (Telegram MVP)
+
+---
+
+# 1. Product Overview
+
+**AI Speaking Club** — Telegram-based English speaking practice platform where users:
+
+* join small group conversations in Telegram voice chats
+* receive AI-generated feedback after speaking sessions
+
+---
+
+# 2. Correct Tech Stack (FINAL)
+
+## 🧱 Backend Core
+
+* **Python 3.11+**
+* **FastAPI** (main backend framework)
+* **Uvicorn** (ASGI server)
+
+---
+
+## 🤖 Telegram Layer
+
+* **aiogram v3** (Telegram Bot Framework)
+* Bot runs as part of backend service (same deployment unit for MVP)
+
+---
+
+## 🗄 Database
+
+* **PostgreSQL** (primary database)
+* **SQLAlchemy 2.0 (async ORM)**
+* **Alembic** (migrations)
+
+---
+
+## ⚡ Async / Background Processing (MVP-light)
+
+* **No Redis required for MVP**
+* Simple background tasks via:
+
+  * `asyncio.create_task` OR
+  * FastAPI BackgroundTasks
+
+---
+
+## 🎙 Speech Processing
+
+* **OpenAI Whisper API** (speech-to-text)
+
+---
+
+## 🧠 AI Layer
+
+* **OpenAI GPT-4o / GPT-4.1**
+* Used for:
+
+  * grammar correction
+  * fluency scoring
+  * vocabulary suggestions
+  * repetition detection
+
+---
+
+## 📦 File Storage (MVP)
+
+* Local filesystem (`/uploads`)
+* (Optional later → S3 / GCS)
+
+---
+
+## 🌐 Frontend (optional MVP component)
+
+* Simple landing page:
+
+  * Next.js OR any static builder (Tilda acceptable)
+* Purpose: redirect to Telegram bot
+
+---
+
+## 🚀 Deployment (MVP)
+
+* Single service deployment:
+
+  * FastAPI + aiogram in one process or same container
+* Docker optional but recommended
+
+---
+
+## 🧪 Testing
+
+* **pytest** — test runner
+* **pytest-asyncio** — async tests (services, handlers, DB layer)
+* **httpx** — ASGI client for FastAPI route tests (`TestClient`)
+* External APIs (**OpenAI**, **Telegram**) — mock or stub in unit tests; no real network calls in default test suite
+
+---
+
+# 3. System Architecture (UPDATED)
+
+## 🧩 High-Level Architecture
+
+```
+User
+ ↓
+Telegram Bot (aiogram)
+ ↓
+Handlers Layer (FastAPI app)
+ ↓
+Service Layer (business logic)
+ ↓
+Database (PostgreSQL)
+ ↓
+AI Services (OpenAI APIs)
+```
+
+---
+
+## 🧱 Internal Backend Structure
+
+```
+project_root/
+ ├── app/
+ │    ├── main.py                # FastAPI entrypoint
+ │    ├── bot/                   # Telegram layer
+ │    │    ├── bot.py
+ │    │    ├── dispatcher.py
+ │    │    └── handlers/
+ │    │         ├── start.py
+ │    │         ├── menu.py
+ │    │         ├── rooms.py
+ │    │         ├── voice.py
+ │    │         └── profile.py
+ │    ├── core/
+ │    │    ├── config.py
+ │    │    └── database.py
+ │    ├── models/                # SQLAlchemy models
+ │    │    ├── user.py
+ │    │    ├── room.py
+ │    │    └── analysis.py
+ │    ├── repositories/          # DB access layer
+ │    │    ├── user_repo.py
+ │    │    └── analysis_repo.py
+ │    ├── services/              # business logic
+ │    │    ├── speech_to_text.py
+ │    │    ├── openai_analysis.py
+ │    │    └── voice_processing.py
+ │    ├── config/
+ │    │    └── rooms.py
+ │    └── uploads/
+ │
+ └── tests/                      # mirrors app/ layout where useful
+      ├── conftest.py            # shared fixtures (DB session, mocks)
+      ├── unit/
+      │    ├── services/
+      │    ├── repositories/
+      │    └── ...
+      └── integration/          # optional: API + test DB
+```
+
+---
+
+# 4. Core Product Flow
+
+## 1. Entry
+
+User opens Telegram bot → `/start`
+
+## 2. Onboarding
+
+* select English level
+* minimal profile creation
+
+## 3. Rooms
+
+* user selects a themed room
+* receives Telegram invite link
+
+## 4. Conversation
+
+* user joins Telegram voice chat (group-based)
+
+## 5. Post-session
+
+* user clicks “Finished talking”
+* sends voice message
+
+## 6. AI Pipeline
+
+1. voice → file download
+2. Whisper → transcript
+3. GPT → analysis
+4. store result
+5. send feedback
+
+---
+
+# 5. Data Model (Simplified MVP)
+
+## User
+
+* id (UUID)
+* telegram_id (unique)
+* level
+* created_at
+
+---
+
+## Room
+
+* id
+* name
+* topic
+* invite_link
+
+---
+
+## Analysis
+
+* id
+* user_id
+* transcript
+* score (0–10)
+* raw_response (JSON/text)
+* created_at
+
+---
+
+# 6. Key Design Decisions (IMPORTANT)
+
+## ❗ aiogram + FastAPI together
+
+* aiogram runs inside same Python app
+* no separate bot service for MVP
+
+---
+
+## ❗ No queue system
+
+* AI calls are synchronous (acceptable for MVP)
+
+---
+
+## ❗ No real-time processing
+
+* everything is post-session only
+
+---
+
+## ❗ Telegram voice chat is external
+
+* we do NOT build RTC
+* we only orchestrate rooms via links
+
+---
+
+# 7. MVP Success Definition
+
+MVP is successful if user can:
+
+1. Join bot
+2. Enter room
+3. Talk in group
+4. Send voice message
+5. Receive AI feedback
+
+👉 If this loop works end-to-end — MVP is valid
+
+---
+
+# 8. Unit Testing (Supplement)
+
+## Goals (MVP)
+
+* Catch regressions in **service layer** and **repositories** when logic changes
+* Keep tests **fast** and **deterministic** (no live Telegram / OpenAI in CI by default)
+* Tests are part of the definition of done for new business logic, not a blocker for the first vertical slice if timeboxed
+
+## What to test first
+
+1. **services/** — speech pipeline orchestration, OpenAI response parsing, scoring helpers (with mocked HTTP/SDK)
+2. **repositories/** — CRUD and queries against a **test database** (SQLite in-memory or ephemeral PostgreSQL) or explicit mocks, per team preference
+3. **Pure helpers** — any formatting, validation, mapping between DTOs and models
+
+## What to defer or keep thin
+
+* **aiogram handlers** — optional smoke tests with mocked `Message`/`CallbackQuery`; full E2E via real Telegram is out of scope for unit tests
+* **FastAPI routes** — cover critical endpoints with `TestClient` once API stabilizes
+
+## Conventions
+
+* Test file naming: `test_<module>.py` next to code under `tests/unit/...` or mirror `app/` tree
+* Run locally: `pytest` (optionally `pytest -m "not integration"` to skip slower tests if markers are used)
+* CI: run `pytest` on every push / PR to main branches when CI exists
+
+## Coverage
+
+* No hard percentage gate for MVP; prioritize **critical paths** (voice → analysis → persist → response shape). Raise thresholds after MVP when the codebase stabilizes.

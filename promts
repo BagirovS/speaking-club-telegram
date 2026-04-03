@@ -1,0 +1,400 @@
+
+---
+
+# 🧩 STEP 1 — Add Telegram Bot (aiogram)
+
+```text id="step1_fastapi_bot"
+Add a Telegram bot to the existing FastAPI project.
+
+Requirements:
+- Use Python
+- Use aiogram (v3)
+- Load BOT_TOKEN from environment variables
+- Create a bot module (e.g., app/bot/)
+- Initialize Bot and Dispatcher
+
+Behavior:
+- Handle /start command
+- Reply: "Welcome to AI Speaking Club"
+
+Integration:
+- Bot should run alongside FastAPI app (same process is OK for MVP)
+
+Keep code simple and clean.
+```
+
+---
+
+# 🧩 STEP 2 — Main Menu
+
+```text id="step2_menu"
+Extend the Telegram bot.
+
+Requirements:
+- On /start, show inline keyboard with:
+  - "Find a Room"
+  - "Profile"
+
+- Use callback_query handlers
+
+Behavior:
+- "Find a Room" → reply "Loading rooms..."
+- "Profile" → reply "Profile coming soon"
+
+Structure:
+- Separate handlers into modules (e.g., handlers/menu.py)
+```
+
+---
+
+# 🧩 STEP 3 — Database Setup (Postgres + SQLAlchemy)
+
+```text id="step3_db"
+Add PostgreSQL integration using SQLAlchemy.
+
+Requirements:
+- Configure DB connection in FastAPI project
+- Create User model:
+  - id (UUID, primary key)
+  - telegram_id (string, unique)
+  - created_at (timestamp)
+
+- Create DB session dependency
+
+Behavior:
+- On /start:
+  - Check if user exists
+  - If not → create
+
+Keep DB logic separate (repository/service layer).
+```
+
+---
+
+# 🧩 STEP 4 — Onboarding (Level Selection)
+
+```text id="step4_onboarding"
+Implement user onboarding.
+
+Requirements:
+- If user has no level:
+  - Ask to select level
+
+- Show inline keyboard:
+  A1, A2, B1, B2, C1, C2
+
+- On selection:
+  - Save level in DB (add column "level")
+  - Show main menu
+
+- Existing users skip onboarding
+
+Keep state handling simple (FSM optional).
+```
+
+---
+
+# 🧩 STEP 5 — Rooms List (Static Config)
+
+```text id="step5_rooms"
+Add rooms feature.
+
+Requirements:
+- Create a rooms config file (e.g., app/config/rooms.py)
+
+Rooms:
+- Travel
+- Dating
+- Business
+
+Each room should have:
+- id
+- name
+
+Behavior:
+- On "Find a Room":
+  - Show inline keyboard with rooms
+
+- On click:
+  - Reply: "Joining room: <name>"
+```
+
+---
+
+# 🧩 STEP 6 — Invite Links
+
+```text id="step6_invites"
+Add Telegram invite links to rooms.
+
+Requirements:
+- Extend rooms config:
+  - add invite_link per room
+
+Behavior:
+- When user selects room:
+  - Send message:
+    "Click below to join the room"
+  - Include invite link
+
+Do not implement limits yet.
+```
+
+---
+
+# 🧩 STEP 7 — Post-Session Flow
+
+```text id="step7_post_session"
+Add post-session interaction.
+
+Requirements:
+- After sending invite link:
+  - Send button: "I finished talking"
+
+- On click:
+  - Reply:
+    "Send your voice message for analysis 🎤"
+
+Keep it stateless.
+```
+
+---
+
+# 🧩 STEP 8 — Handle Voice Messages
+
+```text id="step8_voice"
+Add voice message handling.
+
+Requirements:
+- Detect voice messages
+- Extract file_id
+- Log file_id
+
+Reply:
+"Voice received. Processing..."
+
+Do not process audio yet.
+```
+
+---
+
+# 🧩 STEP 9 — Download Voice File
+
+```text id="step9_download"
+Implement voice file download.
+
+Requirements:
+- Use Telegram API to get file path
+- Download file locally (e.g., /uploads)
+- Generate unique filename
+
+Log saved file path
+
+Handle errors properly.
+```
+
+---
+
+# 🧩 STEP 10 — Speech-to-Text (Whisper)
+
+```text id="step10_whisper"
+Integrate speech-to-text.
+
+Requirements:
+- Use OpenAI Whisper API
+- Send audio file
+- Receive transcript
+
+After processing:
+- Log transcript
+- Reply:
+  "Transcript: <text>"
+
+Keep API logic in separate service module.
+```
+
+---
+
+# 🧩 STEP 11 — AI Analysis
+
+```text id="step11_ai_analysis"
+Add AI speech analysis.
+
+Requirements:
+- Send transcript to OpenAI GPT
+
+Prompt should return:
+- grammar mistakes
+- repeated words
+- vocabulary suggestions
+- fluency score (0–10)
+
+Reply with structured result.
+
+Keep prompt in a separate file.
+```
+
+---
+
+# 🧩 STEP 12 — Format Output
+
+```text id="step12_formatting"
+Improve Telegram response formatting.
+
+Requirements:
+- Format response:
+
+Your score: X/10
+
+Mistakes:
+...
+
+Suggestions:
+...
+
+Tips:
+...
+
+- Use emojis
+- Make it readable
+
+Do not change business logic.
+```
+
+---
+
+# 🧩 STEP 13 — Save Analysis
+
+```text id="step13_save_analysis"
+Persist analysis results.
+
+Requirements:
+- Create Analysis table:
+  - id
+  - user_id (FK)
+  - transcript
+  - score
+  - raw_response
+  - created_at
+
+- Save result after processing
+
+Ensure DB integrity.
+```
+
+---
+
+# 🧩 STEP 14 — Profile / Progress
+
+```text id="step14_progress"
+Implement basic progress view.
+
+Requirements:
+- On "Profile":
+  - Show:
+    total sessions
+    average score
+
+Fetch from Analysis table
+
+Format clean response.
+```
+
+---
+
+# 🏗️ Архитектура (важно, не пропускай)
+
+## 📦 Project Structure
+
+```id="arch1"
+app/
+ ├── main.py (FastAPI entrypoint)
+ ├── bot/
+ │    ├── bot.py
+ │    ├── dispatcher.py
+ │    ├── handlers/
+ │    │     ├── start.py
+ │    │     ├── menu.py
+ │    │     ├── rooms.py
+ │    │     ├── voice.py
+ │    │     └── analysis.py
+ │
+ ├── core/
+ │    ├── config.py
+ │    └── database.py
+ │
+ ├── models/
+ │    ├── user.py
+ │    └── analysis.py
+ │
+ ├── repositories/
+ │    ├── user_repo.py
+ │    └── analysis_repo.py
+ │
+ ├── services/
+ │    ├── openai_service.py
+ │    ├── speech_service.py
+ │    └── analysis_service.py
+ │
+ ├── config/
+ │    └── rooms.py
+ │
+ └── uploads/
+```
+
+---
+
+## 🔁 Flow (очень важно)
+
+```id="arch2"
+Telegram → aiogram → handlers → services → DB → response
+```
+
+---
+
+## 🧠 Разделение ответственности
+
+### Handlers
+
+* только Telegram логика
+* никаких запросов к OpenAI напрямую
+
+---
+
+### Services
+
+* Whisper
+* GPT
+* бизнес логика анализа
+
+---
+
+### Repositories
+
+* только DB операции
+
+---
+
+# ⚠️ Важные решения
+
+## 1. НЕ делай сразу асинхронные очереди
+
+→ сначала синхронно, потом вынесешь
+
+## 2. НЕ усложняй FSM
+
+→ можно вообще без него на MVP
+
+## 3. НЕ делай идеальную схему БД
+
+→ достаточно минимальной
+
+---
+
+# 🔥 Самый важный кусок
+
+Если всё сломается — тебе нужно чтобы работало:
+
+👉 `/start → room → voice → feedback`
+
+Остальное вторично.
+
