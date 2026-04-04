@@ -19,3 +19,11 @@ class UserRepository:
         self._session.add(user)
         await self._session.flush()
         return user
+
+    async def set_level(self, telegram_id: str, level: str) -> User | None:
+        user = await self.get_by_telegram_id(telegram_id)
+        if user is None:
+            return None
+        user.level = level
+        await self._session.flush()
+        return user
