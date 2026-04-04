@@ -18,12 +18,19 @@ CB_ROOM_PREFIX = "menu:room:"
 
 WELCOME_TEXT = "Welcome to AI Speaking Club"
 ONBOARDING_TEXT = "Choose your English level:"
+ROOM_INVITE_TEXT = "Click below to join the room"
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="Find a Room", callback_data=CB_FIND_ROOM))
     builder.row(InlineKeyboardButton(text="Profile", callback_data=CB_PROFILE))
+    return builder.as_markup()
+
+
+def room_invite_keyboard(invite_link: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="Join room", url=invite_link))
     return builder.as_markup()
 
 
@@ -107,7 +114,10 @@ async def on_room_selected(callback: CallbackQuery, session: AsyncSession) -> No
         return
     await callback.answer()
     if callback.message:
-        await callback.message.answer(f"Joining room: {room.name}")
+        await callback.message.answer(
+            ROOM_INVITE_TEXT,
+            reply_markup=room_invite_keyboard(room.invite_link),
+        )
 
 
 @router.callback_query(F.data == CB_PROFILE)
