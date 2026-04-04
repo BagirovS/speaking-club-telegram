@@ -3,3 +3,6 @@
 cd /Users/sibagir1/PycharmProjects/Speaking_club_telegram
 source .venv/bin/activate   # или: uv run ...
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+
+pkill -f "uvicorn app.main:app" 2>/dev/null; sleep 1; cd /Users/sibagir1/PycharmProjects/Speaking_club_telegram && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
