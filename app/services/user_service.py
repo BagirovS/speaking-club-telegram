@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
@@ -15,7 +16,14 @@ class UserService:
         user = await self._users.get_by_telegram_id(telegram_id)
         if user is not None:
             return user
-        user = await self._users.create(telegram_id)
-        await self._session.commit()
-        await self._session.refresh(user)
-        return user
+        try:
+            user = await self._users.create(telegram_id)
+            await self._session.commit()
+            await self._session.refresh(user)
+            return user
+        except IntegrityError:
+            await self._session.rollback()
+            user = await self._users.get_by_telegram_id(telegram_id)
+            if user is None:
+                raise
+            return user
