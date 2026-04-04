@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     )
 
     bot_token: str
+    database_url: str
 
 
 @lru_cache
