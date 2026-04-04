@@ -6,6 +6,17 @@ app/bot/__init__.py
 app/bot/setup.py
 app/bot/handlers/__init__.py
 app/bot/handlers/menu.py
+app/bot/middleware/__init__.py
+app/bot/middleware/db_session.py
+app/db/__init__.py
+app/db/base.py
+app/db/deps.py
+app/db/models.py
+app/db/session.py
+app/repositories/__init__.py
+app/repositories/user_repository.py
+app/services/__init__.py
+app/services/user_service.py
 speaking_club_telegram.egg-info/PKG-INFO
 speaking_club_telegram.egg-info/SOURCES.txt
 speaking_club_telegram.egg-info/dependency_links.txt
