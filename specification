@@ -28,6 +28,7 @@
 
 * **`BOT_TOKEN`** — Telegram Bot API token (required).
 * **`OPENAI_API_KEY`** — OpenAI API key for Whisper and GPT (required).
+* **`ADMIN_TELEGRAM_IDS`** (optional but required for room moderation features) — comma-separated Telegram user ids allowed to run admin-only bot actions (e.g. clearing a room, revoking invites).
 
 Optional (defaults may be hardcoded): model names for GPT / Whisper if you want deploy-time overrides.
 
@@ -147,6 +148,7 @@ project_root/
  │    │         ├── start.py
  │    │         ├── menu.py
  │    │         ├── rooms.py
+ │    │         ├── room_admin.py
  │    │         ├── voice.py
  │    │         └── profile.py
  │    ├── core/
@@ -163,7 +165,8 @@ project_root/
  │    ├── services/              # business logic
  │    │    ├── speech_to_text.py
  │    │    ├── openai_analysis.py
- │    │    └── voice_processing.py
+ │    │    ├── voice_processing.py
+ │    │    └── telegram_group_service.py
  │    ├── alembic/               # versions/ — migrations + optional seed data
  │    └── uploads/
  │
@@ -193,6 +196,17 @@ User opens Telegram bot → `/start`
 
 * user selects a themed **room from the database** (see Data Model: Room)
 * receives Telegram **invite_link** stored for that room
+* each room row is tied to a **Telegram supergroup** via **`telegram_chat_id`** so the bot can call Telegram Bot API methods in that group (see §6 Room moderation)
+
+## 3b. Room moderation (admin via the same bot)
+
+Product operators use **the same bot** (not a separate app) to moderate a room’s Telegram group when needed:
+
+* **Delete messages** — remove messages the bot is allowed to delete (see §6 for API limits; no single “wipe entire chat history” call).
+* **Remove participants** — remove users by `user_id` using restrict/ban APIs; **“kick everyone”** in practice means **every tracked participant** (e.g. users recorded from `chat_member` / join events), because the Bot API does **not** expose a full member list for arbitrary groups.
+* **Revoke / rotate invite link** — call Telegram APIs such as `revokeChatInviteLink` (and `createChatInviteLink` if a new link is issued); **persist the current link only in PostgreSQL** (`Room.invite_link`), updating the row when the link changes.
+
+**Prerequisites:** the bot must be an **administrator** in each room’s supergroup with rights to delete messages, restrict members, and manage invite links as required by the chosen operations.
 
 ## 4. Conversation
 
@@ -207,6 +221,8 @@ User opens Telegram bot → `/start`
    * **No** → do not run analysis; clear the pending voice (or ask them to send a new voice when ready — implementation detail).
 
 UX copy may clarify that the user should finish talking in the group and return to the bot; the bot does **not** detect “left the group” or “left voice chat” as a system event for MVP.
+
+Room moderation (§3b) is **orthogonal** to this flow: it does **not** replace the requirement to send a **voice message to the bot** and confirm **Yes** before the AI pipeline runs.
 
 ## 6. AI Pipeline (after confirmation “Yes”)
 
@@ -240,9 +256,10 @@ UX copy may clarify that the user should finish talking in the group and return 
 * id (UUID or integer, stable)
 * name
 * topic
-* invite_link
+* **telegram_chat_id** — Telegram supergroup id (negative integer as stored by Telegram) used for all Bot API calls targeting that room’s group; must be set for moderation features to work.
+* **invite_link** — current primary or tracked invite URL; **single source of truth in the DB**; may be **updated** after admin revokes/creates a link via the API (still stored only here, not duplicated in code config).
 
-**MVP:** initial rooms (e.g. Travel, Dating, Business) are inserted via **Alembic migration** (seed data) or one-time seed step — not a standalone Python config file as the source of truth.
+**MVP:** initial rooms (e.g. Travel, Dating, Business) are inserted via **Alembic migration** (seed data) or one-time seed step — not a standalone Python config file as the source of truth. Adding or backfilling **`telegram_chat_id`** is also done via **Alembic** when the schema is extended.
 
 ---
 
@@ -282,6 +299,14 @@ UX copy may clarify that the user should finish talking in the group and return 
 
 * we do NOT build RTC
 * we only orchestrate rooms via links
+
+---
+
+## ❗ Room moderation vs user flow
+
+* **User flow** (invite from DB → join group → return to bot) is unchanged; **`invite_link`** remains stored only in PostgreSQL.
+* **Admin flow** uses the same bot with **allowlisted** operator ids (e.g. **`ADMIN_TELEGRAM_IDS`**) to act on a room’s **`telegram_chat_id`**.
+* **Telegram Bot API limits:** there is **no** method to list all members of a large group; “remove everyone” applies to **known** user ids (tracking strategy is an implementation detail). There is **no** one-shot “delete all messages forever” for the whole chat; deletion uses per-message or batch APIs within Telegram’s rules.
 
 ---
 
@@ -342,7 +367,7 @@ MVP is successful if user can:
 
 | Topic | Decision |
 |-------|----------|
-| Rooms | **PostgreSQL** table `Room`; invite links from DB; seed via migration |
+| Rooms | **PostgreSQL** table `Room`; **`telegram_chat_id`** + **`invite_link`** from DB; seed via migration; **`invite_link`** updated in DB when rotated via API; moderation only with bot as **admin** in the group |
 | Env | **`BOT_TOKEN`**, **`OPENAI_API_KEY`** |
 | Services filenames | **`speech_to_text.py`**, **`openai_analysis.py`**, **`voice_processing.py`** |
 | Post-session | **Voice first** → bot asks **finished?** → user answers → **Yes** runs pipeline |

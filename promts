@@ -156,25 +156,49 @@ No duplicate source of truth: invite_link lives only in PostgreSQL (Room).
 
 ---
 
-# 🧩 STEP 7 — Post-session prompt (after invite)
+# 🧩 STEP 7 — Room moderation (admin via bot)
 
-```text id="step7_post_session"
+```text id="step7_room_moderation"
+Allow product admins to moderate each room’s Telegram supergroup **through this bot** (same deployment as the user-facing bot).
+
+Prerequisites (document in config / specification):
+- Bot is added as **administrator** to each room’s group with rights to delete messages, restrict/ban members, and manage invite links as needed.
+- `Room` has **`telegram_chat_id`** (Alembic migration when implementing this step); operations target the group via this id.
+- **Admin-only access** to moderation commands/actions: e.g. allowlist **`ADMIN_TELEGRAM_IDS`** in environment (comma-separated Telegram user ids).
+
+Requirements:
+1. **Delete messages** — use Telegram Bot API (`deleteMessage` / `deleteMessages` where supported). There is no single API to wipe full history; scope follows **specification §3b / §6** (e.g. known message ids or batches within API limits).
+2. **Remove all tracked participants** — Bot API does not list all members. Implement “kick everyone” as removing **every user id the system has tracked** for that room (e.g. from `chat_member` / join events stored in DB), using `banChatMember` / `unbanChatMember` or equivalent policy documented in code.
+3. **Revoke invite link** — call `revokeChatInviteLink` (and `createChatInviteLink` if a new link is issued). **Update `Room.invite_link` in PostgreSQL** to the current link; no second source of truth.
+
+Implementation notes:
+- Put Telegram API orchestration in **services/** (e.g. `telegram_group_service.py` or split as needed); keep handlers thin.
+- Tests per **specification §8**: mock Telegram API / aiogram client; no real network in default suite.
+
+Do not implement user-facing “finish room” as a substitute for the post-session voice pipeline (see steps 8–15).
+```
+
+---
+
+# 🧩 STEP 8 — Post-session prompt (after invite)
+
+```text id="step8_post_session"
 Post-session UX after the invite is sent.
 
 Requirements:
 - After sending the invite link message:
   - Tell the user they can send a **voice message to this bot** when they are ready, for analysis after their session in the group.
 
-- Do **not** require a separate "I finished talking" button **before** the voice (the confirmation step comes **after** the voice — see step 8).
+- Do **not** require a separate "I finished talking" button **before** the voice (the confirmation step comes **after** the voice — see step 9).
 
 Keep copy short and clear.
 ```
 
 ---
 
-# 🧩 STEP 8 — Voice message + "Did you finish?" gate
+# 🧩 STEP 9 — Voice message + "Did you finish?" gate
 
-```text id="step8_voice"
+```text id="step9_voice"
 Handle incoming voice before any Whisper/download of the full pipeline.
 
 Requirements:
@@ -190,7 +214,7 @@ Requirements:
 
 Behavior:
 - If "Not yet": clear pending voice (or keep policy documented), send a short message (e.g. send a new voice when ready)
-- If "Yes": continue to step 9 (download)
+- If "Yes": continue to step 10 (download)
 
 Reply after receiving voice (before Yes) should **not** say "Processing..." for the full AI pipeline — only acknowledge receipt and ask the question.
 
@@ -199,10 +223,10 @@ Do not process audio until the user confirms Yes.
 
 ---
 
-# 🧩 STEP 9 — Download voice file (after Yes)
+# 🧩 STEP 10 — Download voice file (after Yes)
 
-```text id="step9_download"
-Run only after the user confirmed "Yes" in step 8.
+```text id="step10_download"
+Run only after the user confirmed "Yes" in step 9.
 
 Requirements:
 - Use Telegram API to get file path for the **pending** file_id
@@ -218,14 +242,14 @@ Clear pending state after successful download or on fatal error.
 
 ---
 
-# 🧩 STEP 10 — Speech-to-Text (Whisper)
+# 🧩 STEP 11 — Speech-to-Text (Whisper)
 
-```text id="step10_whisper"
+```text id="step11_whisper"
 Integrate speech-to-text.
 
 Requirements:
 - Use OpenAI Whisper API (OPENAI_API_KEY from environment)
-- Send audio file from step 9
+- Send audio file from step 10
 - Receive transcript
 
 After processing:
@@ -238,9 +262,9 @@ Keep API logic in **services/speech_to_text.py** (or project naming per architec
 
 ---
 
-# 🧩 STEP 11 — AI Analysis
+# 🧩 STEP 12 — AI Analysis
 
-```text id="step11_ai_analysis"
+```text id="step12_ai_analysis"
 Add AI speech analysis.
 
 Requirements:
@@ -261,9 +285,9 @@ Use **services/openai_analysis.py** for GPT calls.
 
 ---
 
-# 🧩 STEP 12 — Format Output
+# 🧩 STEP 13 — Format Output
 
-```text id="step12_formatting"
+```text id="step13_formatting"
 Improve Telegram response formatting.
 
 Requirements:
@@ -288,9 +312,9 @@ Do not change business logic.
 
 ---
 
-# 🧩 STEP 13 — Save Analysis
+# 🧩 STEP 14 — Save Analysis
 
-```text id="step13_save_analysis"
+```text id="step14_save_analysis"
 Persist analysis results.
 
 Requirements:
@@ -311,9 +335,9 @@ Add repository tests per specification §8 where appropriate.
 
 ---
 
-# 🧩 STEP 14 — Profile / Progress
+# 🧩 STEP 15 — Profile / Progress
 
-```text id="step14_progress"
+```text id="step15_progress"
 Implement basic progress view.
 
 Requirements:
@@ -343,6 +367,7 @@ app/
  │    │     ├── start.py
  │    │     ├── menu.py
  │    │     ├── rooms.py
+ │    │     ├── room_admin.py
  │    │     ├── voice.py
  │    │     └── profile.py
  │
@@ -363,7 +388,8 @@ app/
  ├── services/
  │    ├── speech_to_text.py
  │    ├── openai_analysis.py
- │    └── voice_processing.py
+ │    ├── voice_processing.py
+ │    └── telegram_group_service.py
  │
  ├── alembic/
  │    └── versions/
@@ -395,6 +421,7 @@ Telegram → aiogram → handlers → services → DB → response
 * **speech_to_text.py** — Whisper
 * **openai_analysis.py** — GPT
 * **voice_processing.py** — оркестрация скачивания/подготовки аудио при необходимости
+* **telegram_group_service.py** — вызовы Telegram Bot API для модерации комнат (удаление сообщений, бан/разбан, инвайт-ссылки); см. step 7
 
 ---
 
